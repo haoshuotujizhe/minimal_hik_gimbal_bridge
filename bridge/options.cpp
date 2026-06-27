@@ -113,6 +113,16 @@ void load_yaml_config(const std::string & path, Options & options)
     options.crop_center_y = std::clamp(options.crop_center_y, 0.0, 1.0);
     options.center_clear_radius = std::max(0, options.center_clear_radius);
   }
+
+  const auto serial_node = storage["serial"];
+  if (!serial_node.empty()) {
+    read_yaml_string(serial_node["video_port"], "serial.video_port", options.video_serial);
+    int baud = 0;
+    read_yaml_int(serial_node["video_baud"], "serial.video_baud", baud);
+    if (baud > 0) {
+      options.video_serial_baud = static_cast<uint32_t>(baud);
+    }
+  }
 }
 
 ConfigSelection select_config_path(int argc, char ** argv)

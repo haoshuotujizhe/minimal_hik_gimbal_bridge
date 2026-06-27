@@ -62,7 +62,7 @@ bool find_annexb_start_code(
   return false;
 }
 
-bool chunk_contains_resync_nal(const uint8_t * buffer, std::size_t size)
+bool chunk_contains_sps(const uint8_t * buffer, std::size_t size)
 {
   AnnexBStartCode start_code{};
   std::size_t search_from = 0;
@@ -70,7 +70,8 @@ bool chunk_contains_resync_nal(const uint8_t * buffer, std::size_t size)
     const auto nal_header_index = start_code.offset + start_code.bytes;
     if (nal_header_index < size) {
       const auto nal_type = static_cast<uint8_t>(buffer[nal_header_index] & 0x1FU);
-      if (nal_type == 5U || nal_type == 7U || nal_type == 8U) {
+      // 只检查 SPS (type 7)，IDR slice (type 5) 不标记为重置
+      if (nal_type == 7U) {
         return true;
       }
     }
@@ -234,8 +235,8 @@ int main(int argc, char ** argv)
           continue;
         }
 
-        const bool has_resync_nal = chunk_contains_resync_nal(video_chunk.data(), video_chunk_size);
-        const bool mark_reset = video_reset_pending.load() || has_resync_nal;
+        const bool has_sps = chunk_contains_sps(video_chunk.data(), video_chunk_size);
+        const bool mark_reset = video_reset_pending.load() && has_sps;
 
         bridge::protocol::CustomClientVideo0310Chunk packet{};
         bridge::protocol::fill_custom_client_0310_video_chunk(
@@ -266,7 +267,7 @@ int main(int argc, char ** argv)
         }
         viewer_udp.send(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet));
         sent_packets.fetch_add(1);
-        if (mark_reset && has_resync_nal) {
+        if (mark_reset && has_sps) {
           video_reset_pending = false;
         }
       }

@@ -1,9 +1,12 @@
 %YAML:1.0
 ---
 camera:
-   serial_number: DA9905404
+   serial_number: DA2819664
    exposure_ms: 6.7599999999999994e+01
    gain: 1.1300000000000001e+01
+serial:
+   video_port: /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
+   video_baud: 921600
 image:
    rotation_matrix: !!opencv-matrix
       rows: 2

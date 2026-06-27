@@ -305,3 +305,21 @@ tail -f logs/bridge-autostart.log
 ### 3. backlog 偶尔升高是否正常？
 
 少量抖动是正常的，只要 backlog 能持续回落、远端能正常解码即可。
+
+
+
+DR/minimal_hik_gimbal_bridge/third_party/serial/src/impl/unix.cc, line 151.
+[bridge] frame_seq=70052 resolution=1440x1080 camera=online fps=14.6 sent=137242 video_tx=reconnecting video_backlog=859 video_seq=137242
+[bridge] frame_seq=70067 resolution=1440x1080 camera=online fps=14.8 sent=137267 video_tx=reconnecting video_backlog=57 video_seq=137267
+[bridge] 0x0310 video serial reconnect failed: IO Exception (2): No such file or directory, file /home/haoshuotujizhe/WDR/minimal_hik_gimbal_bridge/third_party/serial/src/impl/unix.cc, line 151.
+[bridge] frame_seq=70082 resolution=1440x1080 camera=online fps=14.9 sent=137293 video_tx=reconnecting video_backlog=104 video_seq=137293
+[bridge] frame_seq=70097 resolution=1440x1080 camera=online fps=14.7 sent=137318 video_tx=reconnecting video_backlog=90 video_seq=137318
+[bridge] 0x0310 video serial reconnect failed: IO Exception (2): No such file or directory, file /home/haoshuotujizhe/WDR/minimal_hik_gimbal_bridge/third_party/serial/src/impl/unix.cc, line 151.
+[bridge] frame_seq=70112 resolution=1440x1080 camera=online fps=14.8 sent=137346 video_tx=reconnecting video_backlog=2208 video_seq=137346
+[bridge] frame_seq=70127 resolution=1440x1080 camera=online fps=14.8 sent=137380 video_tx=reconnecting video_backlog=67 video_seq=137380
+[bridge] 0x0310 video serial reconnect failed: IO Exception (2): No such file or directory, file /home/haoshuotujizhe/WDR/minimal_hik_gimbal_bridge/third_party/serial/src/impl/unix.cc, line 151.
+[bridge] frame_seq=70142 resolution=1440x1080 camera=online fps=14.7 sent=137409 video_tx=reconnecting video_backlog=73 video_seq=137409
+[bridge] frame_seq=70157 resolution=1440x1080 camera=online fps=14.8 sent=137445 video_tx=reconnecting video_backlog=18 video_seq=137445
+[bridge] 0x0310 video serial reconnect failed: IO Exception (2): No such file or directory, file /home/haoshuotujizhe/WDR/minimal_hik_gimbal_bridge/third_party/serial/src/impl/unix.cc, line 151.
+^C[ffmpeg] [in#0/rawvideo @ 0x64ff7da03080] Error during demuxing: Immediate exit requested
+[ffmpeg] [in#0/rawvideo @ 0x64ff7da03080] Error retrieving a packet from demuxer: Immediate exit requested
