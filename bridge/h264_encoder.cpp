@@ -17,8 +17,6 @@ namespace bridge
 namespace
 {
 
-constexpr std::size_t kTargetSliceMaxBytes = 280U;
-
 struct AnnexBStartCode
 {
   std::size_t offset = 0;
@@ -98,15 +96,49 @@ void H264EncoderProcess::start(uint16_t width, uint16_t height, const Options & 
   const auto clamped_size = std::clamp(options.video_size, 120, 480);
   const auto clamped_fps = std::clamp(options.video_fps, 10, 60);
   const auto clamped_bitrate = std::clamp(options.video_bitrate_kbps, 40, 116);
-  const auto clamped_gop = std::clamp(options.video_gop, 1, clamped_fps * 12);
   const std::string input_size = std::to_string(width) + "x" + std::to_string(height);
-  const std::string video_filter =
-    "hqdn3d=4:3:6:4,"
-    "eq=contrast=1.12:saturation=0.75:gamma=1.05,"
-    "format=yuv420p";
-  const std::string x264_params =
-    "repeat-headers=1:nal-hrd=cbr:force-cfr=1:ref=1:slice-max-size=" +
-    std::to_string(kTargetSliceMaxBytes);
+
+  // Two modes based on bitrate threshold 80 kbps
+  const bool low_bitrate_mode = (clamped_bitrate <= 80);
+
+  // GOP: respect user setting if > 0, otherwise auto-compute
+  int key_int;
+  if (options.video_gop > 0) {
+    key_int = options.video_gop;
+  } else {
+    key_int = clamped_fps;  // 1 keyframe per second
+  }
+
+  // Only convert to yuv420p — NO denoising, NO contrast/saturation filters
+  const std::string video_filter = "format=yuv420p";
+
+  // Always zerolatency + no-B-frames for real-time UDP
+  // VBV rate control (maxrate+bufsize) prevents I-frame bursts from
+  // exceeding the sender's 297-byte/chunk × 50Hz = ~119kbps throughput
+  std::string preset;
+  std::string x264_params;
+
+  if (low_bitrate_mode) {
+    // ≤80 kbps: veryslow preset squeezes max quality out of limited bits
+    preset = "veryslow";
+    x264_params =
+      "repeat-headers=1:scenecut=0:ref=1:"
+      "aq-mode=2:aq-strength=1.2:"
+      "subme=8:trellis=2:deblock=1,1:"
+      "force-cfr=1:sliced-threads=1:aud=1";
+  } else {
+    // >80 kbps: medium preset balances quality vs encode speed
+    preset = "medium";
+    x264_params =
+      "repeat-headers=1:scenecut=0:ref=1:"
+      "aq-mode=2:trellis=1:"
+      "force-cfr=1:sliced-threads=1:aud=1";
+  }
+
+  // VBV: maxrate caps instantaneous bitrate to prevent sender backpressure.
+  // bufsize=bitrate keeps the VBV buffer to 1 second, bounding I-frame sizes.
+  const auto vbv_maxrate = clamped_bitrate;
+  const auto vbv_bufsize = clamped_bitrate;  // 1-second VBV window
 
   std::vector<std::string> args = {
     options.ffmpeg_path,
@@ -120,19 +152,20 @@ void H264EncoderProcess::start(uint16_t width, uint16_t height, const Options & 
     "-an",
     "-vf", video_filter,
     "-c:v", "libx264",
-    "-preset", "veryslow",
+    "-preset", preset,
     "-tune", "zerolatency",
     "-b:v", std::to_string(clamped_bitrate) + "k",
-    "-maxrate", std::to_string(clamped_bitrate) + "k",
-    "-bufsize", std::to_string(clamped_bitrate) + "k",
-    "-g", std::to_string(clamped_gop),
-    "-keyint_min", std::to_string(clamped_gop),
+    "-maxrate", std::to_string(vbv_maxrate) + "k",
+    "-bufsize", std::to_string(vbv_bufsize) + "k",
+    "-g", std::to_string(key_int),
+    "-keyint_min", std::to_string(key_int),
     "-sc_threshold", "0",
     "-bf", "0",
     "-x264-params", x264_params,
     "-pix_fmt", "yuv420p",
     "-f", "h264",
-    "pipe:1"};
+    "pipe:1",
+  };
 
   const auto child_pid = ::fork();
   if (child_pid < 0) {
@@ -175,8 +208,10 @@ void H264EncoderProcess::start(uint16_t width, uint16_t height, const Options & 
             << " output=" << clamped_size << "x" << clamped_size
             << " fps=" << clamped_fps
             << " bitrate=" << clamped_bitrate << "kbit/s"
-            << " gop=" << clamped_gop
-            << " slice_max=" << kTargetSliceMaxBytes << "B" << std::endl;
+            << " vbv=" << vbv_maxrate << "k/" << vbv_bufsize << "k"
+            << " mode=" << (low_bitrate_mode ? "low-bitrate" : "normal")
+            << " preset=" << preset
+            << " gop=" << key_int << std::endl;
 }
 
 void H264EncoderProcess::stop()

@@ -2,8 +2,10 @@
 ---
 camera:
    serial_number: DA2819664
-   exposure_ms: 6.7599999999999994e+01
-   gain: 1.1300000000000001e+01
+   # exposure_ms: 6.7599999999999994e+01
+   # gain: 1.1300000000000001e+01
+   exposure_ms: 20
+   gain: 2.5
 serial:
    video_port: /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
    video_baud: 921600
@@ -12,7 +14,7 @@ image:
       rows: 2
       cols: 2
       dt: d
-      data: [ 0., 1., -1., 0. ]
+      data: [ 1., 0., 0., 1. ]
    crop_center_x: 1.
    crop_center_y: 1.
    center_clear_radius: 0

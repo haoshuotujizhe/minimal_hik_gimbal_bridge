@@ -108,10 +108,8 @@ void load_yaml_config(const std::string & path, Options & options)
     read_yaml_rotation_matrix(image_node["rotation_matrix"], "image.rotation_matrix", options.rotation_matrix);
     read_yaml_double(image_node["crop_center_x"], "image.crop_center_x", options.crop_center_x);
     read_yaml_double(image_node["crop_center_y"], "image.crop_center_y", options.crop_center_y);
-    read_yaml_int(image_node["center_clear_radius"], "image.center_clear_radius", options.center_clear_radius);
     options.crop_center_x = std::clamp(options.crop_center_x, 0.0, 1.0);
     options.crop_center_y = std::clamp(options.crop_center_y, 0.0, 1.0);
-    options.center_clear_radius = std::max(0, options.center_clear_radius);
   }
 
   const auto serial_node = storage["serial"];
@@ -162,21 +160,20 @@ void print_help()
     << "  --send-interval-ms <n>   串口发送周期，默认 20 ms，对应 0x0310 50Hz\n"
     << "  --ffmpeg <path>          H264 编码器路径，默认 ffmpeg\n"
     << "  --video-size <n>         0310 视频输出边长，默认 300\n"
-    << "  --video-fps <n>          0310 视频编码帧率，默认 30\n"
-    << "  --video-bitrate-kbps <n> 0310 视频目标码率，默认 116 kbit/s\n"
-    << "  --video-gop <n>          H264 GOP，默认 10\n"
+    << "  --video-fps <n>          0310 视频编码帧率，默认 60\n"
+    << "  --video-bitrate-kbps <n> 0310 视频目标码率，默认 116 kbit/s（≤80 触发低码率优化模式）\n"
+    << "  --video-gop <n>          H264 GOP，0=自动，默认 0\n"
     << "  --crop-size <n>          预处理中心裁剪边长，0 表示自动取最小边\n"
     << "  --static-simplify        开启静态区域简化预处理，默认开启\n"
     << "  --no-static-simplify     显式关闭静态区域简化预处理\n"
     << "  --motion-threshold <n>   运动检测阈值，默认 14\n"
-    << "  --motion-erode-px <n>    运动掩码腐蚀像素，默认 2\n"
-    << "  --motion-dilate-px <n>   运动掩码膨胀像素，默认 6\n"
-    << "  --motion-trail-frames <n>拖影历史帧数，默认 0\n"
-    << "  --trail-disable-motion-ratio <f> 全局运动占比超阈值时禁用拖影，默认 0.55\n"
+    << "  --motion-erode-px <n>    运动掩码腐蚀像素，默认 1\n"
+    << "  --motion-dilate-px <n>   运动掩码膨胀像素，默认 2\n"
+    << "  --motion-trail-frames <n>拖影历史帧数，默认 3\n"
+    << "  --trail-disable-motion-ratio <f> 全局运动占比超阈值时禁用拖影，默认 0.30\n"
     << "  --bg-update-alpha <f>    背景更新 alpha，默认 0.01\n"
-    << "  --bg-blur-sigma <f>      静态区域模糊 sigma，默认 1.5\n"
-    << "  --center-clear-size <n>  中心保护区边长，默认 180\n"
-    << "  --center-clear-radius <n>中心圆形保真半径，默认 112；大于 0 时圆外压黑\n"
+    << "  --bg-blur-sigma <f>      静态区域模糊 sigma，默认 1.2\n"
+    << "  --center-clear-size <n>  中心保护区边长，默认 100\n"
     << "  --force-monochrome       预处理后强制灰度\n"
     << "  --test-pattern           无相机时使用内置测试图案源\n"
     << "  --preview                显示相机原画面，并在窗口内调曝光/增益，按 S 保存 YAML\n"
@@ -213,7 +210,6 @@ bool save_config(Options & options, std::string * error)
   storage << "rotation_matrix" << rotation_matrix;
   storage << "crop_center_x" << std::clamp(options.crop_center_x, 0.0, 1.0);
   storage << "crop_center_y" << std::clamp(options.crop_center_y, 0.0, 1.0);
-  storage << "center_clear_radius" << std::max(0, options.center_clear_radius);
   storage << "}";
   storage.release();
 
@@ -284,8 +280,6 @@ Options parse_args(int argc, char ** argv)
       options.bg_blur_sigma = std::stod(require_value("--bg-blur-sigma"));
     } else if (arg == "--center-clear-size") {
       options.center_clear_size = static_cast<int>(parse_u32(require_value("--center-clear-size")));
-    } else if (arg == "--center-clear-radius") {
-      options.center_clear_radius = static_cast<int>(parse_u32(require_value("--center-clear-radius")));
     } else if (arg == "--force-monochrome") {
       options.force_monochrome = true;
     } else if (arg == "--test-pattern") {

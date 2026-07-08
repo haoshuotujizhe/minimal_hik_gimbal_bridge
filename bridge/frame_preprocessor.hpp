@@ -22,7 +22,6 @@ public:
 
 private:
   void reset_history();
-  cv::Mat center_circle_mask(const cv::Size & size);
 
   std::array<double, 4> rotation_matrix_ = {1.0, 0.0, 0.0, 1.0};
   int crop_size_ = 0;
@@ -32,20 +31,17 @@ private:
   int target_bitrate_kbps_ = 88;
   bool static_simplify_ = true;
   int motion_threshold_ = 14;
-  int motion_erode_px_ = 2;
-  int motion_dilate_px_ = 6;
-  int motion_trail_frames_ = 8;
-  double trail_disable_motion_ratio_ = 0.55;
+  int motion_erode_px_ = 1;
+  int motion_dilate_px_ = 2;
+  int motion_trail_frames_ = 3;
+  double trail_disable_motion_ratio_ = 0.30;
   double bg_update_alpha_ = 0.01;
-  double bg_blur_sigma_ = 1.5;
-  int center_clear_size_ = 180;
-  int center_clear_radius_ = 96;
+  double bg_blur_sigma_ = 1.2;
+  int center_clear_size_ = 100;
   bool force_monochrome_ = false;
   cv::Mat background_gray_f32_;
   cv::Mat motion_erode_kernel_;
   cv::Mat motion_dilate_kernel_;
-  cv::Mat center_circle_mask_cache_;
-  int center_circle_mask_radius_ = -1;
   std::deque<cv::Mat> motion_mask_history_;
   std::deque<cv::Mat> trail_frame_history_;
 };

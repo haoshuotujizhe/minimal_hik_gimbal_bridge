@@ -190,7 +190,6 @@ int main(int argc, char ** argv)
 
     std::cout << "[bridge] preprocess crop=" << options.crop_size
               << " output=" << preprocessor.output_size() << 'x' << preprocessor.output_size()
-              << " center_circle_radius=" << options.center_clear_radius
               << " static_simplify=" << (options.static_simplify ? "on" : "off")
               << " trail=" << options.motion_trail_frames
               << " erode=" << options.motion_erode_px
