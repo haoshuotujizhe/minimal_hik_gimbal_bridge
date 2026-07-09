@@ -1,7 +1,9 @@
 %YAML:1.0
 ---
 camera:
-   serial_number: DA2819664
+   # serial_number: DA2819664   #CS016
+   # serial_number: DA2918288   #CU013
+   serial_number: J06720553     
    # exposure_ms: 6.7599999999999994e+01
    # gain: 1.1300000000000001e+01
    exposure_ms: 20

@@ -101,44 +101,43 @@ void H264EncoderProcess::start(uint16_t width, uint16_t height, const Options & 
   // Two modes based on bitrate threshold 80 kbps
   const bool low_bitrate_mode = (clamped_bitrate <= 80);
 
-  // GOP: respect user setting if > 0, otherwise auto-compute
+  // Use intra-refresh instead of periodic I-frames.
+  // Intra-refresh spreads intra macroblocks across all frames, cycling the
+  // full image every 'key_int' frames.  This eliminates:
+  //   1) I-frame burst (no single frame is all-intra) → no sender backpressure
+  //   2) P-frame drift (~60 gens accumulation) → no mosaic artifacts on static scenes
   int key_int;
   if (options.video_gop > 0) {
     key_int = options.video_gop;
   } else {
-    key_int = clamped_fps;  // 1 keyframe per second
+    key_int = clamped_fps;  // full refresh cycle every 1 second
   }
 
   // Only convert to yuv420p — NO denoising, NO contrast/saturation filters
   const std::string video_filter = "format=yuv420p";
 
   // Always zerolatency + no-B-frames for real-time UDP
-  // VBV rate control (maxrate+bufsize) prevents I-frame bursts from
-  // exceeding the sender's 297-byte/chunk × 50Hz = ~119kbps throughput
   std::string preset;
   std::string x264_params;
 
   if (low_bitrate_mode) {
-    // ≤80 kbps: veryslow preset squeezes max quality out of limited bits
+    // ≤80 kbps: veryslow for max compression efficiency
     preset = "veryslow";
     x264_params =
       "repeat-headers=1:scenecut=0:ref=1:"
       "aq-mode=2:aq-strength=1.2:"
       "subme=8:trellis=2:deblock=1,1:"
+      "intra-refresh=1:"
       "force-cfr=1:sliced-threads=1:aud=1";
   } else {
-    // >80 kbps: medium preset balances quality vs encode speed
-    preset = "medium";
+    // >80 kbps: veryfast — matches zerolatency tune (no lookahead RC oscillation)
+    preset = "veryfast";
     x264_params =
       "repeat-headers=1:scenecut=0:ref=1:"
-      "aq-mode=2:trellis=1:"
+      "aq-mode=2:"
+      "intra-refresh=1:"
       "force-cfr=1:sliced-threads=1:aud=1";
   }
-
-  // VBV: maxrate caps instantaneous bitrate to prevent sender backpressure.
-  // bufsize=bitrate keeps the VBV buffer to 1 second, bounding I-frame sizes.
-  const auto vbv_maxrate = clamped_bitrate;
-  const auto vbv_bufsize = clamped_bitrate;  // 1-second VBV window
 
   std::vector<std::string> args = {
     options.ffmpeg_path,
@@ -155,12 +154,11 @@ void H264EncoderProcess::start(uint16_t width, uint16_t height, const Options & 
     "-preset", preset,
     "-tune", "zerolatency",
     "-b:v", std::to_string(clamped_bitrate) + "k",
-    "-maxrate", std::to_string(vbv_maxrate) + "k",
-    "-bufsize", std::to_string(vbv_bufsize) + "k",
     "-g", std::to_string(key_int),
     "-keyint_min", std::to_string(key_int),
     "-sc_threshold", "0",
     "-bf", "0",
+    "-intra-refresh", "1",
     "-x264-params", x264_params,
     "-pix_fmt", "yuv420p",
     "-f", "h264",
@@ -208,10 +206,9 @@ void H264EncoderProcess::start(uint16_t width, uint16_t height, const Options & 
             << " output=" << clamped_size << "x" << clamped_size
             << " fps=" << clamped_fps
             << " bitrate=" << clamped_bitrate << "kbit/s"
-            << " vbv=" << vbv_maxrate << "k/" << vbv_bufsize << "k"
             << " mode=" << (low_bitrate_mode ? "low-bitrate" : "normal")
             << " preset=" << preset
-            << " gop=" << key_int << std::endl;
+            << " intra-refresh-cycle=" << key_int << std::endl;
 }
 
 void H264EncoderProcess::stop()

@@ -197,9 +197,11 @@ cv::Mat FramePreprocessor::process_rgb24(const FrameInfo & frame)
     cv::rectangle(motion_mask, cv::Rect(x0, y0, cw, ch), cv::Scalar(255), cv::FILLED);
   }
 
-  // Pacific: static composition (no sharpening/detailed_focus layer)
+  // Always convert static background to grayscale for strong ROI visual distinction.
+  // Colored sharp center/motion areas vs gray blurred background.
+  // Skip if force_monochrome_ already made the whole image grayscale.
   cv::Mat static_base = working.clone();
-  if (!force_monochrome_ && target_bitrate_kbps_ <= 80) {
+  if (!force_monochrome_) {
     cv::Mat gray_bg;
     cv::cvtColor(static_base, gray_bg, cv::COLOR_BGR2GRAY);
     cv::cvtColor(gray_bg, static_base, cv::COLOR_GRAY2BGR);
