@@ -207,20 +207,25 @@ cv::Mat FramePreprocessor::process_rgb24(const FrameInfo & frame)
 
   cv::Mat static_base = working.clone();
 
-  cv::Mat detail_blur;
-  cv::Mat detailed_focus;
-  cv::GaussianBlur(working, detail_blur, cv::Size(), 0.85, 0.85);
-  cv::addWeighted(working, 1.45, detail_blur, -0.45, 0.0, detailed_focus);
+  // Pacific-style: desaturate static areas for low bitrate to save bandwidth
+  // (matching Pacific_doorlock_sniper's approach for ≤80kbps encoding)
+  if (!force_monochrome_ && target_bitrate_kbps_ <= 80) {
+    cv::Mat gray_static;
+    cv::cvtColor(static_base, gray_static, cv::COLOR_BGR2GRAY);
+    cv::cvtColor(gray_static, static_base, cv::COLOR_GRAY2BGR);
+  }
 
   cv::Mat blurred_static;
   cv::GaussianBlur(static_base, blurred_static, cv::Size(), bg_blur_sigma_, bg_blur_sigma_);
 
   cv::Mat focused = blurred_static.clone();
-  detailed_focus.copyTo(focused, focus_mask);
+  // Pacific-style: copy original working frame to motion areas (not sharpened)
+  working.copyTo(focused, focus_mask);
 
   if (motion_trail_frames_ > 0) {
     motion_mask_history_.push_back(motion_mask.clone());
-    trail_frame_history_.push_back(detailed_focus.clone());
+    // Pacific-style: store original frame (not sharpened) for trail history
+    trail_frame_history_.push_back(working.clone());
     const auto max_history = static_cast<std::size_t>(motion_trail_frames_ + 1);
     while (motion_mask_history_.size() > max_history) {
       motion_mask_history_.pop_front();
@@ -232,7 +237,7 @@ cv::Mat FramePreprocessor::process_rgb24(const FrameInfo & frame)
     const auto history_size = motion_mask_history_.size();
     if (!suppress_trail && history_size > 1 && history_size == trail_frame_history_.size()) {
       cv::Mat trail_mask = motion_mask.clone();
-      cv::Mat trail_img = detailed_focus.clone();
+      cv::Mat trail_img = working.clone();
       for (std::size_t i = 0; i + 1 < history_size; ++i) {
         cv::bitwise_or(trail_mask, motion_mask_history_[i], trail_mask);
         cv::max(trail_img, trail_frame_history_[i], trail_img);

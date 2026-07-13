@@ -305,3 +305,7 @@ tail -f logs/bridge-autostart.log
 ### 3. backlog 偶尔升高是否正常？
 
 少量抖动是正常的，只要 backlog 能持续回落、远端能正常解码即可。
+
+cmake -S . -B build
+cmake --build build -j
+./build/minimal_hik_gimbal_bridge --viewer-ip 127.0.0.1 --viewer-port 3335
