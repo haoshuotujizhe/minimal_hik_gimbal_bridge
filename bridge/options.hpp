@@ -19,7 +19,7 @@ struct Options
   int send_interval_ms = 20;    //发送间隔 50Hz
   std::string ffmpeg_path = "ffmpeg";
   int video_size = 480;   //输出图像边长，分辨率，细节  硬上限480
-  int video_fps = 60;   //编码帧率
+  int video_fps = 30;   //编码帧率
   int video_bitrate_kbps = 116;   //H264 编码目标码率 116上限
   int video_gop = 10;   //关键帧间隔
   int crop_size = 0;

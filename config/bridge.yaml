@@ -2,8 +2,8 @@
 ---
 camera:
    serial_number: J06720553
-   exposure_ms: 76.
-   gain: 1.
+   exposure_ms: 1.0199999999999999e+01
+   gain: 9.0000000000000002e-01
 image:
    rotation_matrix: !!opencv-matrix
       rows: 2
