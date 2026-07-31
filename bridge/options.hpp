@@ -21,7 +21,7 @@ struct Options
   int video_size = 480;   //输出图像边长，分辨率，细节  硬上限480
   int video_fps = 30;   //编码帧率
   int video_bitrate_kbps = 116;   //H264 编码目标码率 116上限
-  int video_gop = 10;   //关键帧间隔
+  int video_gop = 90;   //关键帧间隔 (折中: 每3秒一个I帧@30fps, 延迟~3s)
   int crop_size = 0;
   bool static_simplify = true;    //静态简化开关
   int motion_threshold = 14;    //运动检测灵冥度 14

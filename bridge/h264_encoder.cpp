@@ -96,16 +96,22 @@ void H264EncoderProcess::start(uint16_t width, uint16_t height, const Options & 
   }
 
   const auto clamped_size = std::clamp(options.video_size, 120, 480);
-  const auto clamped_fps = std::clamp(options.video_fps, 10, 60);
+  const auto clamped_fps = std::clamp(options.video_fps, 2, 60);  //10
   const auto clamped_bitrate = std::clamp(options.video_bitrate_kbps, 40, 116);
-  const auto clamped_gop = std::clamp(options.video_gop, 1, clamped_fps * 12);
+  const auto clamped_gop = std::clamp(options.video_gop, 1, clamped_fps * 600); //
   const std::string input_size = std::to_string(width) + "x" + std::to_string(height);
   const std::string video_filter =
     "hqdn3d=4:3:6:4,"
     "eq=contrast=1.12:saturation=0.75:gamma=1.05,"
     "format=yuv420p";
+  // 折中方案(延迟~3s): 去掉 zerolatency, 开启 mbtree/B帧/多参考帧提升画质,
+  // 但把 rc-lookahead 限制在 30 帧(≈1s)控制编码前向延迟
   const std::string x264_params =
-    "repeat-headers=1:nal-hrd=cbr:force-cfr=1:ref=1:slice-max-size=" +
+    "repeat-headers=1:nal-hrd=cbr:force-cfr=1:ref=5:bframes=2:"
+    "b-adapt=2:rc-lookahead=30:sync-lookahead=20:"
+    "aq-mode=2:aq-strength=1.2:mbtree=1:qcomp=0.75:"
+    "subme=9:trellis=2:deblock=1,1:"
+    "slice-max-size=" +
     std::to_string(kTargetSliceMaxBytes);
 
   std::vector<std::string> args = {
@@ -121,14 +127,13 @@ void H264EncoderProcess::start(uint16_t width, uint16_t height, const Options & 
     "-vf", video_filter,
     "-c:v", "libx264",
     "-preset", "veryslow",
-    "-tune", "zerolatency",
     "-b:v", std::to_string(clamped_bitrate) + "k",
     "-maxrate", std::to_string(clamped_bitrate) + "k",
-    "-bufsize", std::to_string(clamped_bitrate) + "k",
+    // bufsize = bitrate × 5 ≈ 580k ≈ 72.5 kB, 允许 I 帧 ~35 kB → 传输约 2-3 秒
+    "-bufsize", std::to_string(clamped_bitrate * 5) + "k",
     "-g", std::to_string(clamped_gop),
-    "-keyint_min", std::to_string(clamped_gop),
-    "-sc_threshold", "0",
-    "-bf", "0",
+    "-keyint_min", std::to_string(clamped_gop / 2),
+    "-sc_threshold", "40",
     "-x264-params", x264_params,
     "-pix_fmt", "yuv420p",
     "-f", "h264",
