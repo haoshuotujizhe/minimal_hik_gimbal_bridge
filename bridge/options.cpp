@@ -109,9 +109,11 @@ void load_yaml_config(const std::string & path, Options & options)
     read_yaml_double(image_node["crop_center_x"], "image.crop_center_x", options.crop_center_x);
     read_yaml_double(image_node["crop_center_y"], "image.crop_center_y", options.crop_center_y);
     read_yaml_int(image_node["center_clear_radius"], "image.center_clear_radius", options.center_clear_radius);
+    read_yaml_double(image_node["video_latency_s"], "image.video_latency_s", options.video_latency_s);
     options.crop_center_x = std::clamp(options.crop_center_x, 0.0, 1.0);
     options.crop_center_y = std::clamp(options.crop_center_y, 0.0, 1.0);
     options.center_clear_radius = std::max(0, options.center_clear_radius);
+    options.video_latency_s = std::clamp(options.video_latency_s, 0.5, 10.0);
   }
 }
 
@@ -154,7 +156,8 @@ void print_help()
     << "  --video-size <n>         0310 视频输出边长，默认 300\n"
     << "  --video-fps <n>          0310 视频编码帧率，默认 30\n"
     << "  --video-bitrate-kbps <n> 0310 视频目标码率，默认 116 kbit/s\n"
-    << "  --video-gop <n>          H264 GOP，默认 10\n"
+    << "  --video-latency-s <f>    目标延迟秒数(0.5~10)，联动推导 bufsize/GOP/rc-lookahead，默认 3.0\n"
+    << "  --video-gop <n>          H264 GOP(帧)，0=自动=video_latency_s×fps，设非0手动覆盖\n"
     << "  --crop-size <n>          预处理中心裁剪边长，0 表示自动取最小边\n"
     << "  --static-simplify        开启静态区域简化预处理，默认开启\n"
     << "  --no-static-simplify     显式关闭静态区域简化预处理\n"
@@ -204,6 +207,7 @@ bool save_config(Options & options, std::string * error)
   storage << "crop_center_x" << std::clamp(options.crop_center_x, 0.0, 1.0);
   storage << "crop_center_y" << std::clamp(options.crop_center_y, 0.0, 1.0);
   storage << "center_clear_radius" << std::max(0, options.center_clear_radius);
+  storage << "video_latency_s" << std::clamp(options.video_latency_s, 0.5, 10.0);
   storage << "}";
   storage.release();
 
@@ -250,6 +254,8 @@ Options parse_args(int argc, char ** argv)
       options.video_fps = static_cast<int>(parse_u32(require_value("--video-fps")));
     } else if (arg == "--video-bitrate-kbps") {
       options.video_bitrate_kbps = static_cast<int>(parse_u32(require_value("--video-bitrate-kbps")));
+    } else if (arg == "--video-latency-s") {
+      options.video_latency_s = std::stod(require_value("--video-latency-s"));
     } else if (arg == "--video-gop") {
       options.video_gop = static_cast<int>(parse_u32(require_value("--video-gop")));
     } else if (arg == "--crop-size") {

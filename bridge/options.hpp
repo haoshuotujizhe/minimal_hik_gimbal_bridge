@@ -21,7 +21,8 @@ struct Options
   int video_size = 480;   //输出图像边长，分辨率，细节  硬上限480
   int video_fps = 30;   //编码帧率
   int video_bitrate_kbps = 116;   //H264 编码目标码率 116上限
-  int video_gop = 90;   //关键帧间隔 (折中: 每3秒一个I帧@30fps, 延迟~3s)
+  double video_latency_s = 12.0;   //目标延迟秒数 → 联动推导 bufsize/GOP/rc-lookahead (延迟与画质权衡的唯一杠杆)
+  int video_gop = 0;   //关键帧间隔(帧): 0=自动=video_latency_s×video_fps; 设非0手动覆盖
   int crop_size = 0;
   bool static_simplify = true;    //静态简化开关
   int motion_threshold = 14;    //运动检测灵冥度 14
@@ -33,7 +34,7 @@ struct Options
   double bg_blur_sigma = 1.00;   //静态区域模糊强度
   int center_clear_size = 100;    //roi
   int center_clear_radius = 0;    //roi  116 不走拖影逻辑
-  bool force_monochrome = true;   //强制灰度
+  bool force_monochrome = false;   //强制灰度
   bool test_pattern = false;
   bool preview = true;   //预览窗口，调曝光增益
   bool list_cameras = false;

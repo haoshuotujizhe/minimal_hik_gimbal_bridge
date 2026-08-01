@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <cmath>
 #include <csignal>
 #include <cstring>
 #include <iostream>
@@ -96,19 +97,36 @@ void H264EncoderProcess::start(uint16_t width, uint16_t height, const Options & 
   }
 
   const auto clamped_size = std::clamp(options.video_size, 120, 480);
-  const auto clamped_fps = std::clamp(options.video_fps, 2, 60);  //10
+  const auto clamped_fps = std::clamp(options.video_fps, 2, 60);
   const auto clamped_bitrate = std::clamp(options.video_bitrate_kbps, 40, 116);
-  const auto clamped_gop = std::clamp(options.video_gop, 1, clamped_fps * 600); //
+
+  // ---- fps ↔ bufsize 联动: 以"目标延迟秒数"为唯一杠杆 ----
+  // 0x0310 链路带宽硬上限 = 15 kB/s = 120 kbit/s (与发送端硬限速一致)
+  constexpr double kLinkBandwidthKbitPerSec = 120.0;
+  const double latency_sec = std::clamp(options.video_latency_s, 0.5, 10.0);
+  // bufsize: 缓冲区能容纳 latency_sec 秒的链路数据 → I 帧可借该预算 → 画质随延迟线性提升
+  // 至少不小于码率, 否则 CBR 码率控制失效
+  const double bufsize_kbit = std::max(
+    latency_sec * kLinkBandwidthKbitPerSec,
+    static_cast<double>(clamped_bitrate));
+  // GOP: 完整帧刷新周期 = latency_sec 秒 (帧数 = 秒数 × fps)
+  const int gop_auto = static_cast<int>(std::llround(latency_sec * clamped_fps));
+  const int gop_requested = (options.video_gop > 0) ? options.video_gop : gop_auto;
+  const auto clamped_gop = std::clamp(gop_requested, 1, clamped_fps * 600);
+  // rc-lookahead: 编码前向延迟 ≈ 延迟的 1/4
+  const int rc_lookahead_frames = std::clamp(
+    static_cast<int>(std::llround(latency_sec * clamped_fps * 0.25)), 10, 60);
+  const int sync_lookahead_frames = std::clamp(rc_lookahead_frames * 2 / 3, 5, 40);
+
   const std::string input_size = std::to_string(width) + "x" + std::to_string(height);
   const std::string video_filter =
     "hqdn3d=4:3:6:4,"
     "eq=contrast=1.12:saturation=0.75:gamma=1.05,"
     "format=yuv420p";
-  // 折中方案(延迟~3s): 去掉 zerolatency, 开启 mbtree/B帧/多参考帧提升画质,
-  // 但把 rc-lookahead 限制在 30 帧(≈1s)控制编码前向延迟
   const std::string x264_params =
     "repeat-headers=1:nal-hrd=cbr:force-cfr=1:ref=5:bframes=2:"
-    "b-adapt=2:rc-lookahead=30:sync-lookahead=20:"
+    "b-adapt=2:rc-lookahead=" + std::to_string(rc_lookahead_frames) +
+    ":sync-lookahead=" + std::to_string(sync_lookahead_frames) + ":"
     "aq-mode=2:aq-strength=1.2:mbtree=1:qcomp=0.75:"
     "subme=9:trellis=2:deblock=1,1:"
     "slice-max-size=" +
@@ -129,8 +147,8 @@ void H264EncoderProcess::start(uint16_t width, uint16_t height, const Options & 
     "-preset", "veryslow",
     "-b:v", std::to_string(clamped_bitrate) + "k",
     "-maxrate", std::to_string(clamped_bitrate) + "k",
-    // bufsize = bitrate × 5 ≈ 580k ≈ 72.5 kB, 允许 I 帧 ~35 kB → 传输约 2-3 秒
-    "-bufsize", std::to_string(clamped_bitrate * 5) + "k",
+    // bufsize = latency_sec × 带宽(120kbit/s), 由 video_latency_s 联动
+    "-bufsize", std::to_string(static_cast<int>(std::ceil(bufsize_kbit))) + "k",
     "-g", std::to_string(clamped_gop),
     "-keyint_min", std::to_string(clamped_gop / 2),
     "-sc_threshold", "40",
