@@ -113,7 +113,7 @@ void load_yaml_config(const std::string & path, Options & options)
     options.crop_center_x = std::clamp(options.crop_center_x, 0.0, 1.0);
     options.crop_center_y = std::clamp(options.crop_center_y, 0.0, 1.0);
     options.center_clear_radius = std::max(0, options.center_clear_radius);
-    options.video_latency_s = std::clamp(options.video_latency_s, 0.5, 10.0);
+    options.video_latency_s = std::clamp(options.video_latency_s, 0.2, 10.0);
   }
 }
 
@@ -156,7 +156,7 @@ void print_help()
     << "  --video-size <n>         0310 视频输出边长，默认 300\n"
     << "  --video-fps <n>          0310 视频编码帧率，默认 30\n"
     << "  --video-bitrate-kbps <n> 0310 视频目标码率，默认 116 kbit/s\n"
-    << "  --video-latency-s <f>    目标延迟秒数(0.5~10)，联动推导 bufsize/GOP/rc-lookahead，默认 3.0\n"
+    << "  --video-latency-s <f>    目标延迟秒数(0.2~10)，联动推导 bufsize/GOP/rc-lookahead，默认 3.0\n"
     << "  --video-gop <n>          H264 GOP(帧)，0=自动=video_latency_s×fps，设非0手动覆盖\n"
     << "  --crop-size <n>          预处理中心裁剪边长，0 表示自动取最小边\n"
     << "  --static-simplify        开启静态区域简化预处理，默认开启\n"
@@ -207,7 +207,7 @@ bool save_config(Options & options, std::string * error)
   storage << "crop_center_x" << std::clamp(options.crop_center_x, 0.0, 1.0);
   storage << "crop_center_y" << std::clamp(options.crop_center_y, 0.0, 1.0);
   storage << "center_clear_radius" << std::max(0, options.center_clear_radius);
-  storage << "video_latency_s" << std::clamp(options.video_latency_s, 0.5, 10.0);
+  storage << "video_latency_s" << std::clamp(options.video_latency_s, 0.2, 10.0);
   storage << "}";
   storage.release();
 

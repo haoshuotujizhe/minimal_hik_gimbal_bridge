@@ -21,7 +21,7 @@ struct Options
   int video_size = 480;   //输出图像边长，分辨率，细节  硬上限480
   int video_fps = 30;   //编码帧率
   int video_bitrate_kbps = 116;   //H264 编码目标码率 116上限
-  double video_latency_s = 12.0;   //目标延迟秒数 → 联动推导 bufsize/GOP/rc-lookahead (延迟与画质权衡的唯一杠杆)
+  double video_latency_s = 0.3;   //1.5 目标延迟秒数 → 联动推导 bufsize/GOP/rc-lookahead (延迟与画质权衡的唯一杠杆)
   int video_gop = 0;   //关键帧间隔(帧): 0=自动=video_latency_s×video_fps; 设非0手动覆盖
   int crop_size = 0;
   bool static_simplify = true;    //静态简化开关

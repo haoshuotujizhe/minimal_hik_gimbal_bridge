@@ -244,6 +244,37 @@ int main(int argc, char ** argv)
           }
         }
 
+        // ---- 滑动窗口硬限速：严格不超过 15 kB/s ----
+        // 窗口满时让数据留在编码器缓冲区排队（不消费、不丢弃）。
+        // 绝不丢包: 丢包会让接收端进入 3 秒 SPS 阻塞, 造成固定延迟.
+        {
+          // 驱逐窗口外的旧记录
+          const auto window_duration =
+            std::chrono::duration<double>(kRateWindowSec);
+          while (!rate_window.empty() && (now - rate_window.front().first) > window_duration) {
+            rate_window_bytes -= rate_window.front().second;
+            rate_window.pop_front();
+          }
+
+          // 窗口已满: 不 pop_chunk, 数据留在缓冲区等下一周期; 积压超限时裁剪到关键帧
+          if (rate_window_bytes + kPacketWireBytes > kRateWindowByteLimit) {
+            rate_limited_drops++;
+            // 允许排队最多 video_latency_s 秒的数据, 超出则丢弃到下一个关键帧边界
+            const size_t backlog_max = static_cast<size_t>(
+              std::clamp(options.video_latency_s, 0.2, 10.0) * kBandwidthLimitBps);
+            if (video_encoder.queued_bytes() > backlog_max) {
+              video_encoder.drop_to_resync_nal();
+              video_reset_pending = true;  // 让接收端通过 reset flag 快速重新同步
+              if (rate_limited_drops % 100 == 1) {
+                std::cerr << "[bridge] RATE LIMIT: backlog=" << video_encoder.queued_bytes()
+                          << "B > " << backlog_max << "B, dropped to keyframe, total_wait="
+                          << rate_limited_drops << std::endl;
+              }
+            }
+            continue;  // 等待下一周期窗口有余量
+          }
+        }
+
         std::array<uint8_t, bridge::protocol::kCustomClientVideo0310PayloadBytes> video_chunk{};
         std::size_t video_chunk_size = 0;
         const bool packet_ready = video_encoder.pop_chunk(video_chunk, video_chunk_size);
@@ -262,33 +293,9 @@ int main(int argc, char ** argv)
           video_chunk.data(),
           video_chunk_size);
 
-        // ---- 滑动窗口硬限速：严格不超过 15 kB/s ----
-        {
-          // 驱逐窗口外的旧记录
-          const auto window_duration =
-            std::chrono::duration<double>(kRateWindowSec);
-          while (!rate_window.empty() && (now - rate_window.front().first) > window_duration) {
-            rate_window_bytes -= rate_window.front().second;
-            rate_window.pop_front();
-          }
-
-          // 检查是否会超过窗口上限
-          if (rate_window_bytes + kPacketWireBytes > kRateWindowByteLimit) {
-            rate_limited_drops++;
-            if (rate_limited_drops % 100 == 1) {
-              std::cerr << "[bridge] RATE LIMIT: window=" << rate_window_bytes
-                        << "/" << kRateWindowByteLimit << "B ("
-                        << std::fixed << std::setprecision(1)
-                        << (static_cast<double>(rate_window_bytes) / kRateWindowSec / 1000.0)
-                        << "kB/s) dropping packet, total_drops="
-                        << rate_limited_drops << std::endl;
-            }
-            continue;  // 跳过本次发送，等待下一个周期
-          }
-
-          rate_window.emplace_back(now, kPacketWireBytes);
-          rate_window_bytes += kPacketWireBytes;
-        }
+        // 发送前登记窗口 (只在真正发送的包上计, 不丢包)
+        rate_window.emplace_back(now, kPacketWireBytes);
+        rate_window_bytes += kPacketWireBytes;
 
         if (video_serial.is_open()) {
           try {

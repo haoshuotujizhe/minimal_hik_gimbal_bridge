@@ -308,4 +308,6 @@ tail -f logs/bridge-autostart.log
 
 cmake -S . -B build
 cmake --build build -j
-./build/minimal_hik_gimbal_bridge --viewer-ip 127.0.0.1 --viewer-port 3335
+./build/minimal_hik_gimbal_bridge --viewer-ip 127.0.0.1 --viewer-port 3335 --video-serial /dev/rm_video
+./build/minimal_hik_gimbal_bridge
+./build/minimal_hik_gimbal_bridge --video-serial /dev/rm_video

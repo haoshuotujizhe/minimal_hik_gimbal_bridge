@@ -103,7 +103,7 @@ void H264EncoderProcess::start(uint16_t width, uint16_t height, const Options & 
   // ---- fps ↔ bufsize 联动: 以"目标延迟秒数"为唯一杠杆 ----
   // 0x0310 链路带宽硬上限 = 15 kB/s = 120 kbit/s (与发送端硬限速一致)
   constexpr double kLinkBandwidthKbitPerSec = 120.0;
-  const double latency_sec = std::clamp(options.video_latency_s, 0.5, 10.0);
+  const double latency_sec = std::clamp(options.video_latency_s, 0.2, 10.0);
   // bufsize: 缓冲区能容纳 latency_sec 秒的链路数据 → I 帧可借该预算 → 画质随延迟线性提升
   // 至少不小于码率, 否则 CBR 码率控制失效
   const double bufsize_kbit = std::max(
@@ -113,10 +113,12 @@ void H264EncoderProcess::start(uint16_t width, uint16_t height, const Options & 
   const int gop_auto = static_cast<int>(std::llround(latency_sec * clamped_fps));
   const int gop_requested = (options.video_gop > 0) ? options.video_gop : gop_auto;
   const auto clamped_gop = std::clamp(gop_requested, 1, clamped_fps * 600);
-  // rc-lookahead: 编码前向延迟 ≈ 延迟的 1/4
+  // rc-lookahead: 编码前向延迟 ≈ 延迟的 1/4; 低延迟时可降到 0 (接近 zerolatency)
   const int rc_lookahead_frames = std::clamp(
-    static_cast<int>(std::llround(latency_sec * clamped_fps * 0.25)), 10, 60);
-  const int sync_lookahead_frames = std::clamp(rc_lookahead_frames * 2 / 3, 5, 40);
+    static_cast<int>(std::llround(latency_sec * clamped_fps * 0.25)), 0, 60);
+  const int sync_lookahead_frames = std::clamp(rc_lookahead_frames * 2 / 3, 0, 40);
+  // 延迟 ≤1s 时禁用 B 帧, 消除帧重排延迟 (低延迟优先); 高延迟才启用 B 帧提升压缩
+  const int b_frames = (latency_sec <= 1.0) ? 0 : 2;
 
   const std::string input_size = std::to_string(width) + "x" + std::to_string(height);
   const std::string video_filter =
@@ -124,8 +126,8 @@ void H264EncoderProcess::start(uint16_t width, uint16_t height, const Options & 
     "eq=contrast=1.12:saturation=0.75:gamma=1.05,"
     "format=yuv420p";
   const std::string x264_params =
-    "repeat-headers=1:nal-hrd=cbr:force-cfr=1:ref=5:bframes=2:"
-    "b-adapt=2:rc-lookahead=" + std::to_string(rc_lookahead_frames) +
+    "repeat-headers=1:nal-hrd=cbr:force-cfr=1:ref=5:bframes=" + std::to_string(b_frames) +
+    ":b-adapt=2:rc-lookahead=" + std::to_string(rc_lookahead_frames) +
     ":sync-lookahead=" + std::to_string(sync_lookahead_frames) + ":"
     "aq-mode=2:aq-strength=1.2:mbtree=1:qcomp=0.75:"
     "subme=9:trellis=2:deblock=1,1:"
@@ -332,6 +334,53 @@ std::size_t H264EncoderProcess::queued_bytes() const
 {
   std::lock_guard<std::mutex> lock(buffer_mutex_);
   return encoded_buffer_.size();
+}
+
+void H264EncoderProcess::drop_to_resync_nal()
+{
+  std::lock_guard<std::mutex> lock(buffer_mutex_);
+  if (encoded_buffer_.empty()) {
+    return;
+  }
+
+  AnnexBStartCode start_code{};
+  if (!find_annexb_start_code(encoded_buffer_, 0, start_code)) {
+    // 没有起始码，整段不可用，直接清空
+    encoded_buffer_.clear();
+    return;
+  }
+
+  // 检查第一个 NAL 是否已经是 resync NAL
+  const auto nal_type = [&](const AnnexBStartCode & sc) -> int {
+    const auto header_index = sc.offset + sc.bytes;
+    if (header_index >= encoded_buffer_.size()) {
+      return -1;
+    }
+    return static_cast<int>(encoded_buffer_[header_index] & 0x1FU);
+  };
+  const auto is_resync = [](int type) {
+    return type == 5 || type == 7 || type == 8;  // IDR / SPS / PPS
+  };
+
+  if (is_resync(nal_type(start_code))) {
+    return;  // 开头就是关键帧，无需丢弃
+  }
+
+  // 从后续 NAL 中找第一个 resync NAL，丢弃它之前的所有字节
+  std::size_t search_from = start_code.offset + start_code.bytes;
+  AnnexBStartCode next{};
+  while (find_annexb_start_code(encoded_buffer_, search_from, next)) {
+    if (is_resync(nal_type(next))) {
+      encoded_buffer_.erase(
+        encoded_buffer_.begin(),
+        encoded_buffer_.begin() + static_cast<long>(next.offset));
+      return;
+    }
+    search_from = next.offset + next.bytes;
+  }
+
+  // 找不到任何 resync NAL（全是 P 帧等），整段无法同步，清空等下一个 IDR
+  encoded_buffer_.clear();
 }
 
 void H264EncoderProcess::close_fd(int & fd)

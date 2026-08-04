@@ -31,7 +31,9 @@ public:
     std::array<uint8_t, protocol::kCustomClientVideo0310PayloadBytes> & chunk,
     std::size_t & chunk_size);
   std::size_t queued_bytes() const;
-
+  /// 丢弃编码缓冲区中第一个 resync NAL (SPS/PPS/IDR) 之前的所有数据。
+  /// 用于限速积压超限时裁剪，保证接收端能通过 reset flag 快速重新同步。
+  void drop_to_resync_nal();
 private:
   static void close_fd(int & fd);
   static void close_pair(int (&fds)[2]);
