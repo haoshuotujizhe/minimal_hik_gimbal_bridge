@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <chrono>
 #include <csignal>
+#include <deque>
 #include <iomanip>
 #include <iostream>
 #include <thread>
@@ -164,12 +165,28 @@ int main(int argc, char ** argv)
     double fps = 0.0;
     auto last_report = bridge::Clock::now();
     auto fps_window = bridge::Clock::now();
+    // 带宽统计: 每包固定 300 字节 = 2.4Kbit
+    uint32_t prev_sent_packets = 0;
+    double tx_bandwidth_kbps = 0.0;
+    double tx_bandwidth_kBps = 0.0;
     auto last_test_frame = bridge::Clock::time_point{};
     uint32_t test_pattern_sequence = 0;
     auto next_camera_retry = bridge::Clock::time_point{};
     bridge::Clock::time_point last_camera_open_error{};
     bridge::Clock::time_point last_camera_runtime_error{};
     std::atomic_uint32_t video_serial_seq = 0;
+
+    // ---- 滑动窗口硬限速：严格不超过 15 kB/s (300B × 50Hz) ----
+    // 采用 0.2 秒短窗口实现精细粒度控制
+    constexpr double kBandwidthLimitBps = 15000.0;    // 15 kB/s 硬上限
+    constexpr double kRateWindowSec = 0.2;             // 200ms 滑动窗口
+    constexpr std::size_t kRateWindowByteLimit =
+      static_cast<std::size_t>(kBandwidthLimitBps * kRateWindowSec);  // 3000 bytes/window
+    constexpr std::size_t kPacketWireBytes =
+      bridge::protocol::kCustomClient0310PayloadBytes;  // 300 bytes/packet
+    std::deque<std::pair<bridge::Clock::time_point, std::size_t>> rate_window;
+    std::size_t rate_window_bytes = 0;
+    uint64_t rate_limited_drops = 0;
 
     const auto maybe_open_camera = [&](bridge::Clock::time_point now) {
       if (options.test_pattern || camera.is_open() || now < next_camera_retry) {
@@ -227,6 +244,37 @@ int main(int argc, char ** argv)
           }
         }
 
+        // ---- 滑动窗口硬限速：严格不超过 15 kB/s ----
+        // 窗口满时让数据留在编码器缓冲区排队（不消费、不丢弃）。
+        // 绝不丢包: 丢包会让接收端进入 3 秒 SPS 阻塞, 造成固定延迟.
+        {
+          // 驱逐窗口外的旧记录
+          const auto window_duration =
+            std::chrono::duration<double>(kRateWindowSec);
+          while (!rate_window.empty() && (now - rate_window.front().first) > window_duration) {
+            rate_window_bytes -= rate_window.front().second;
+            rate_window.pop_front();
+          }
+
+          // 窗口已满: 不 pop_chunk, 数据留在缓冲区等下一周期; 积压超限时裁剪到关键帧
+          if (rate_window_bytes + kPacketWireBytes > kRateWindowByteLimit) {
+            rate_limited_drops++;
+            // 允许排队最多 video_latency_s 秒的数据, 超出则丢弃到下一个关键帧边界
+            const size_t backlog_max = static_cast<size_t>(
+              std::clamp(options.video_latency_s, 0.2, 10.0) * kBandwidthLimitBps);
+            if (video_encoder.queued_bytes() > backlog_max) {
+              video_encoder.drop_to_resync_nal();
+              video_reset_pending = true;  // 让接收端通过 reset flag 快速重新同步
+              if (rate_limited_drops % 100 == 1) {
+                std::cerr << "[bridge] RATE LIMIT: backlog=" << video_encoder.queued_bytes()
+                          << "B > " << backlog_max << "B, dropped to keyframe, total_wait="
+                          << rate_limited_drops << std::endl;
+              }
+            }
+            continue;  // 等待下一周期窗口有余量
+          }
+        }
+
         std::array<uint8_t, bridge::protocol::kCustomClientVideo0310PayloadBytes> video_chunk{};
         std::size_t video_chunk_size = 0;
         const bool packet_ready = video_encoder.pop_chunk(video_chunk, video_chunk_size);
@@ -244,6 +292,10 @@ int main(int argc, char ** argv)
           static_cast<uint8_t>(video_sequence.fetch_add(1)),
           video_chunk.data(),
           video_chunk_size);
+
+        // 发送前登记窗口 (只在真正发送的包上计, 不丢包)
+        rate_window.emplace_back(now, kPacketWireBytes);
+        rate_window_bytes += kPacketWireBytes;
 
         if (video_serial.is_open()) {
           try {
@@ -355,11 +407,24 @@ int main(int argc, char ** argv)
       }
 
       if (now - last_report >= std::chrono::seconds(1)) {
+        const uint32_t current_sent = sent_packets.load();
+        const uint32_t delta_packets = current_sent - prev_sent_packets;
+        const auto report_elapsed_s =
+          std::chrono::duration_cast<std::chrono::milliseconds>(now - last_report).count() / 1000.0;
+        if (report_elapsed_s > 0.0) {
+          tx_bandwidth_kbps = static_cast<double>(delta_packets * bridge::protocol::kCustomClient0310PayloadBytes * 8) / (report_elapsed_s * 1000.0);
+          tx_bandwidth_kBps = static_cast<double>(delta_packets * bridge::protocol::kCustomClient0310PayloadBytes) / (report_elapsed_s * 1000.0);
+        }
+        prev_sent_packets = current_sent;
+
         std::cout << "[bridge] frame_seq=" << latest_frame.sequence
                   << " resolution=" << latest_frame.width << 'x' << latest_frame.height
                   << " camera=" << (options.test_pattern ? "test" : (camera.is_open() ? "online" : "reconnecting"))
                   << " fps=" << std::fixed << std::setprecision(1) << fps
-                  << " sent=" << sent_packets.load()
+                  << " sent=" << current_sent
+                  << " tx_bw=" << std::setprecision(2) << tx_bandwidth_kBps << "kB/s(" << tx_bandwidth_kbps << "kbps)"
+                  << " limit=15.0kB/s"
+                  << " rate_drops=" << rate_limited_drops
                   << " video_tx=" << (video_serial.is_open() ? "online" : "reconnecting")
                   << " video_backlog=" << video_encoder.queued_bytes()
                   << " video_seq=" << video_sequence.load();

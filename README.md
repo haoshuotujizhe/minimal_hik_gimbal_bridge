@@ -306,8 +306,8 @@ tail -f logs/bridge-autostart.log
 
 少量抖动是正常的，只要 backlog 能持续回落、远端能正常解码即可。
 
-
-
 cmake -S . -B build
 cmake --build build -j
-./build/minimal_hik_gimbal_bridge --viewer-ip 127.0.0.1 --viewer-port 3335
+./build/minimal_hik_gimbal_bridge --viewer-ip 127.0.0.1 --viewer-port 3335 --video-serial /dev/rm_video
+./build/minimal_hik_gimbal_bridge
+./build/minimal_hik_gimbal_bridge --video-serial /dev/rm_video
